@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-from database import insert_product, get_low_stock, get_available_products, register_sale
+# IMPORTANTE: Aquí ya agregamos las funciones de contaduría y supabase
+from database import supabase, insert_product, get_low_stock, get_available_products, register_sale, registrar_movimiento, obtener_movimientos
 from ai_processor import extract_data_from_image
 
 st.set_page_config(page_title="Punto de Venta Automotriz", layout="wide")
@@ -19,7 +20,8 @@ def calculate_sale_price(entry_cost, profit_margin):
 
 st.title("Sistema de Inventario y Precios")
 
-tab1, tab2, tab3 = st.tabs(["Ingreso de Mercancia", "Punto de Venta", "Dashboard y Alertas"])
+# CREAMOS UNA CUARTA PESTAÑA PARA CONTADURÍA
+tab1, tab2, tab3, tab4 = st.tabs(["Ingreso de Mercancia", "Punto de Venta", "Dashboard y Alertas", "Contaduría"])
 
 with tab1:
     st.header("Registrar Nuevos Productos")
@@ -57,14 +59,11 @@ with tab1:
 with tab2:
     st.header("Terminal de Punto de Venta")
     
-    # 1. Cargar productos disponibles desde la base de datos
     available_products = get_available_products()
     
     if available_products:
-        # Convertir a un diccionario para buscar facilmente por ID
         product_dict = {p['id']: p for p in available_products}
         
-        # 2. Buscador de productos (Dropdown)
         selected_id = st.selectbox(
             "Buscar articulo para cobrar:",
             options=list(product_dict.keys()),
@@ -76,19 +75,16 @@ with tab2:
             
             col1, col2 = st.columns(2)
             with col1:
-                # 3. Selector de cantidad (no te deja vender mas de lo que tienes)
                 sell_quantity = st.number_input("Cantidad a vender", min_value=1, max_value=selected_product['stock'], value=1)
             
             with col2:
-                # 4. Calculadora del total
                 total_to_pay = selected_product['price'] * sell_quantity
                 st.metric("Total a Cobrar", f"${total_to_pay:.2f}")
             
-            # 5. Boton de cobro
             if st.button("Cobrar y Descontar Inventario", type="primary"):
                 register_sale(selected_id, sell_quantity)
                 st.success(f"Venta registrada con exito. Se descontaron {sell_quantity} pieza(s).")
-                st.rerun() # Refresca la pagina automaticamente para actualizar el stock
+                st.rerun() 
     else:
         st.info("Tu inventario esta vacio o todos los productos estan agotados.")
 
@@ -101,3 +97,33 @@ with tab3:
         st.dataframe(df_low[['name', 'category', 'stock']], use_container_width=True)
     else:
         st.success("Inventario en niveles optimos.")
+
+with tab4:
+    st.header("📊 Contaduría")
+
+    with st.expander("Registrar Nuevo Movimiento"):
+        with st.form("registro_finanzas"):
+            tipo = st.selectbox("Tipo de Movimiento", ["Ingreso", "Gasto"])
+            monto = st.number_input("Monto ($)", min_value=0.0, step=10.0)
+            descripcion = st.text_input("Descripción (Ej. Venta de refacción, Pago de luz)")
+            guardar = st.form_submit_button("Guardar")
+            
+            if guardar:
+                registrar_movimiento(supabase, tipo, monto, descripcion)
+                st.success("Movimiento registrado con éxito")
+                st.rerun()
+
+    movimientos = obtener_movimientos(supabase)
+    if movimientos:
+        df = pd.DataFrame(movimientos)
+        
+        total_ingresos = df[df['tipo'] == 'Ingreso']['monto'].sum()
+        total_gastos = df[df['tipo'] == 'Gasto']['monto'].sum()
+        ganancia_neta = total_ingresos - total_gastos
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Ingresos Totales", f"${total_ingresos:,.2f}")
+        col2.metric("Gastos Totales", f"${total_gastos:,.2f}")
+        col3.metric("Ganancia Neta", f"${ganancia_neta:,.2f}")
+        
+        st.dataframe(df[['fecha', 'tipo', 'descripcion', 'monto']], use_container_width=True)
