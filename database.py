@@ -31,37 +31,11 @@ def register_sale(product_id, quantity_sold):
         new_stock = product.data['stock'] - quantity_sold
         return supabase.table("products").update({"stock": new_stock}).eq("id", product_id).execute()
     return None
-    st.header("📊 Contaduría")
 
-# Formulario para registrar un nuevo gasto o ingreso
-with st.expander("Registrar Nuevo Movimiento"):
-    with st.form("registro_finanzas"):
-        tipo = st.selectbox("Tipo de Movimiento", ["Ingreso", "Gasto"])
-        monto = st.number_input("Monto ($)", min_value=0.0, step=10.0)
-        descripcion = st.text_input("Descripción (Ej. Venta de gorra, Pago de luz)")
-        guardar = st.form_submit_button("Guardar")
-        
-        if guardar:
-            registrar_movimiento(supabase, tipo, monto, descripcion)
-            st.success("Movimiento registrado con éxito")
-            st.rerun()
+def registrar_movimiento(supabase, tipo, monto, descripcion):
+    datos = {"tipo": tipo, "monto": monto, "descripcion": descripcion}
+    return supabase.table("contabilidad").insert(datos).execute()
 
-# Mostrar historial y totales
-movimientos = obtener_movimientos(supabase)
-if movimientos:
-    import pandas as pd
-    df = pd.DataFrame(movimientos)
-    
-    # Calcular totales
-    total_ingresos = df[df['tipo'] == 'Ingreso']['monto'].sum()
-    total_gastos = df[df['tipo'] == 'Gasto']['monto'].sum()
-    ganancia_neta = total_ingresos - total_gastos
-    
-    # Mostrar métricas en la pantalla
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Ingresos Totales", f"${total_ingresos:,.2f}")
-    col2.metric("Gastos Totales", f"${total_gastos:,.2f}")
-    col3.metric("Ganancia Neta", f"${ganancia_neta:,.2f}")
-    
-    # Mostrar la tabla con el historial
-    st.dataframe(df[['fecha', 'tipo', 'descripcion', 'monto']], use_container_width=True)
+def obtener_movimientos(supabase):
+    respuesta = supabase.table("contabilidad").select("*").order("fecha", desc=True).execute()
+    return respuesta.data
